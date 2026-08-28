@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CMP100-210 Research <cmp100-research@example.invalid>
+Date: Fri, 28 Aug 2026 12:00:00 -0400
+Subject: [PATCH 2/2] route Volta Q4_K and Q5_K through the DP4A MMQ configuration
+Base-Commit: 0d0bfcd4fd8828e3e7906b6fc4561725b534511e
+
+Mechanism: Volta Q4_K/Q5_K MMQ configuration routing
+Evidence: docs/findings/accepted-optimizations.md#forced-dp4ammq-for-tested-quantized-prefill
+Integrity: exact-output retained
+Scope: SM70 Q4_K and Q5_K MMQ configuration selection only
+Changed-Files: ggml/src/ggml-cuda/mmq.cuh
+---
+diff --git a/ggml/src/ggml-cuda/mmq.cuh b/ggml/src/ggml-cuda/mmq.cuh
+index 2eb15fdfa..ab76eb312 100644
+--- a/ggml/src/ggml-cuda/mmq.cuh
++++ b/ggml/src/ggml-cuda/mmq.cuh
+@@ -244,7 +244,12 @@ static __host__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config(const ggml_type ty
+     if (blackwell_mma_available(cc)) {
+         return ggml_cuda_mmq_get_config_blackwell(type, J, fallback);
+     }
+-    if (ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_VOLTA) {
++    const int compiled_arch = ggml_cuda_highest_compiled_arch(cc);
++    if (compiled_arch >= GGML_CUDA_CC_VOLTA) {
++        if (compiled_arch < GGML_CUDA_CC_TURING &&
++            (type == GGML_TYPE_Q4_K || type == GGML_TYPE_Q5_K)) {
++            return ggml_cuda_mmq_get_config_pascal(type, J, fallback);
++        }
+         return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
+     }
+     return ggml_cuda_mmq_get_config_pascal(type, J, fallback);
+@@ -267,6 +272,11 @@ static constexpr __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config(ggml_t
+ #ifdef BLACKWELL_MMA_AVAILABLE
+     return ggml_cuda_mmq_get_config_blackwell(type, J, fallback);
+ #elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
++#if __CUDA_ARCH__ < GGML_CUDA_CC_TURING
++    if (type == GGML_TYPE_Q4_K || type == GGML_TYPE_Q5_K) {
++        return ggml_cuda_mmq_get_config_pascal(type, J, fallback);
++    }
++#endif
+     return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
+ #else
+     return ggml_cuda_mmq_get_config_pascal(type, J, fallback);
+-- 
+2.51.0

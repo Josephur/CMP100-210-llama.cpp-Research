@@ -11,6 +11,10 @@ Start with [Methodology](methodology.md) and [Hardware Limitations](hardware-lim
 The [Findings](findings/accepted-optimizations.md) retain negative evidence as
 well as accepted configuration-specific results.
 
+The [Source patches](source-release.md) page documents the pinned upstream
+base, complete-hunk series, transactional application gate, and native-SM70
+build boundary.
+
 ## How to read a result
 
 A result is only comparable when the model, quantization, request shape,

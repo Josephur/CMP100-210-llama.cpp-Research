@@ -4,6 +4,7 @@
     ".github/workflows/pages.yml",
     "LICENSE",
     "LICENSE-docs",
+    "PATCHES.md",
     "README.md",
     "THIRD_PARTY_NOTICES.md",
     "data/results-schema.json",
@@ -18,7 +19,12 @@
     "docs/hardware-limitations.md",
     "docs/index.md",
     "docs/methodology.md",
+    "docs/source-release.md",
     "mkdocs.yml",
-    "release-manifest.json"
+    "patches/llama.cpp/0001-force-dp4a-mmq-routing.patch",
+    "patches/llama.cpp/0002-route-volta-q4k-q5k-mmq.patch",
+    "patches/llama.cpp/audit.json",
+    "release-manifest.json",
+    "scripts/apply-patches.sh"
   ]
 }

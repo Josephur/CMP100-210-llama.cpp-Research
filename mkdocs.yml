@@ -14,6 +14,7 @@ nav:
   - Home: index.md
   - Methodology: methodology.md
   - Hardware Limitations: hardware-limitations.md
+  - Source Patches: source-release.md
   - Findings:
       - Accepted Optimizations: findings/accepted-optimizations.md
       - Rejected Ideas: findings/rejected-ideas.md

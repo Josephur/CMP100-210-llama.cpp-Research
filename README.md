@@ -22,6 +22,8 @@ quality or speed.
   [rejected ideas](docs/findings/rejected-ideas.md): bounded decision records.
 - [Measurement summary](docs/findings/measurement-summary.md) and the
   machine-readable [selected results](data/selected-results.csv).
+- [Source patches](docs/source-release.md): the exact-base source series,
+  complete-hunk inventory, application gate, and build boundaries.
 
 The browser portal is built from the same public documents with MkDocs. It is
 not a live benchmark dashboard and contains no model weights, binaries, raw
