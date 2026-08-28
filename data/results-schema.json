@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "description": "Curated configuration-specific research decisions without raw prompts, completions, infrastructure identifiers, or logs.",
+  "fields": [
+    "finding_id",
+    "status",
+    "model_scope",
+    "hardware_scope",
+    "context_tokens",
+    "metric",
+    "baseline",
+    "candidate",
+    "unit",
+    "delta_percent",
+    "integrity",
+    "evidence_scope",
+    "notes"
+  ],
+  "comparison_rule": "Compare only rows whose model_scope, hardware_scope, context_tokens, metric, and evidence_scope match."
+}

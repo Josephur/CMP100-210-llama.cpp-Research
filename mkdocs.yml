@@ -1,0 +1,20 @@
+site_name: CMP100-210 llama.cpp Research
+site_description: Experimental, configuration-scoped llama.cpp research
+docs_dir: docs
+site_dir: site
+strict: true
+
+theme:
+  name: material
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Methodology: methodology.md
+  - Hardware Limitations: hardware-limitations.md
+  - Findings:
+      - Accepted Optimizations: findings/accepted-optimizations.md
+      - Rejected Ideas: findings/rejected-ideas.md
+      - Measurement Summary: findings/measurement-summary.md

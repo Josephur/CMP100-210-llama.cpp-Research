@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; background: #fff; }
+    svg { display: block; width: 1280px; height: 720px; }
+    .node { fill: #fff; stroke: #cfd8dc; stroke-width: 2; }
+    .focal { fill: #e8eaf6; stroke: #3f51b5; stroke-width: 3; }
+    .constraint { fill: #f5f7f8; stroke: #90a4ae; stroke-width: 2; stroke-dasharray: 8 8; }
+    .rejected { fill: #fff8e1; stroke: #b0bec5; stroke-width: 2; stroke-dasharray: 8 8; }
+    .name { fill: #263238; font: 700 18px system-ui, sans-serif; text-anchor: middle; }
+    .sub { fill: #546e7a; font: 12px ui-monospace, monospace; text-anchor: middle; }
+    .eyebrow { fill: #607d8b; font: 500 12px ui-monospace, monospace; letter-spacing: 2px; }
+    .callout { fill: #37474f; font: 16px system-ui, sans-serif; }
+    .legend { fill: #546e7a; font: 14px system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+<svg viewBox="0 0 1280 720" role="img" aria-labelledby="request-title request-desc">
+  <title id="request-title">CMP100-210 inference token flow</title>
+  <desc id="request-desc">A public technical flow from request tokenization through lossless staging and six serialized layer owners to sampled streamed tokens.</desc>
+  <defs>
+    <marker id="request-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#546e7a"/></marker>
+    <marker id="request-arrow-indigo" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#3f51b5"/></marker>
+  </defs>
+  <rect width="1280" height="720" fill="#ffffff"/>
+  <text x="48" y="56" class="eyebrow">PUBLIC TECHNICAL FLOW · INFERENCE</text>
+  <text x="48" y="104" fill="#263238" font-family="system-ui, sans-serif" font-size="40" font-weight="700">Prompt in, token stream out</text>
+  <text x="48" y="136" fill="#607d8b" font-family="system-ui, sans-serif" font-size="20">Prefill moves through six serialized layer owners; batch-one decode repeats the same dependency chain.</text>
+
+  <line x1="192" y1="332" x2="224" y2="332" stroke="#546e7a" stroke-width="3" marker-end="url(#request-arrow)"/>
+  <line x1="376" y1="332" x2="408" y2="332" stroke="#3f51b5" stroke-width="4" marker-end="url(#request-arrow-indigo)"/>
+  <line x1="560" y1="332" x2="592" y2="332" stroke="#3f51b5" stroke-width="4" marker-end="url(#request-arrow-indigo)"/>
+  <line x1="744" y1="332" x2="776" y2="332" stroke="#546e7a" stroke-width="3" marker-end="url(#request-arrow)"/>
+  <line x1="928" y1="332" x2="960" y2="332" stroke="#546e7a" stroke-width="3" marker-end="url(#request-arrow)"/>
+
+  <rect x="48" y="276" width="144" height="112" rx="8" class="node"/>
+  <text x="120" y="324" class="name">Request</text>
+  <text x="120" y="352" class="sub">format + tokenize</text>
+
+  <rect x="224" y="276" width="152" height="112" rx="8" class="node"/>
+  <text x="300" y="324" class="name">Prompt prefill</text>
+  <text x="300" y="352" class="sub">microbatches</text>
+
+  <rect x="408" y="276" width="152" height="112" rx="8" class="focal"/>
+  <text x="484" y="316" class="name">Lossless staging</text>
+  <text x="484" y="344" class="sub">pinned + mapped host</text>
+  <text x="484" y="364" class="sub">retained path</text>
+
+  <rect x="592" y="276" width="152" height="112" rx="8" class="focal"/>
+  <text x="668" y="316" class="name">Layer owners</text>
+  <text x="668" y="344" class="sub">six card sequence</text>
+  <text x="668" y="364" class="sub">host-staged hops</text>
+
+  <rect x="776" y="276" width="152" height="112" rx="8" class="node"/>
+  <text x="852" y="316" class="name">Attention + MoE</text>
+  <text x="852" y="344" class="sub">forced DP4A/MMQ</text>
+  <text x="852" y="364" class="sub">tested prefill</text>
+
+  <rect x="960" y="276" width="160" height="112" rx="8" class="node"/>
+  <text x="1040" y="316" class="name">Sample + stream</text>
+  <text x="1040" y="344" class="sub">KV update + token</text>
+  <text x="1040" y="364" class="sub">repeat for decode</text>
+
+  <rect x="240" y="456" width="360" height="88" rx="8" class="constraint"/>
+  <text x="272" y="492" class="eyebrow">CONSTRAINT</text>
+  <text x="272" y="520" class="callout">Inter-card boundaries are host staged.</text>
+
+  <rect x="640" y="456" width="400" height="88" rx="8" class="rejected"/>
+  <text x="672" y="492" class="eyebrow">REJECTED FOR INTEGRITY</text>
+  <text x="672" y="520" class="callout">Lossy FP16 transport changed deterministic output.</text>
+
+  <line x1="48" y1="632" x2="1232" y2="632" stroke="#cfd8dc" stroke-width="2"/>
+  <rect x="48" y="656" width="20" height="12" fill="#e8eaf6" stroke="#3f51b5" stroke-width="2"/>
+  <text x="80" y="668" class="legend">retained, configuration-specific improvement</text>
+  <rect x="448" y="656" width="20" height="12" fill="#fff8e1" stroke="#b0bec5" stroke-width="2" stroke-dasharray="6 6"/>
+  <text x="480" y="668" class="legend">rejected by exact-output policy</text>
+</svg>
+</body>
+</html>

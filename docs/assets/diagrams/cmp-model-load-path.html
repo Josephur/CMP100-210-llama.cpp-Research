@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; background: #fff; }
+    svg { display: block; width: 1280px; height: 720px; }
+    .node { fill: #fff; stroke: #cfd8dc; stroke-width: 2; }
+    .focal { fill: #e8eaf6; stroke: #3f51b5; stroke-width: 3; }
+    .constraint { fill: #f5f7f8; stroke: #90a4ae; stroke-width: 2; stroke-dasharray: 8 8; }
+    .name { fill: #263238; font: 700 20px system-ui, sans-serif; text-anchor: middle; }
+    .sub { fill: #546e7a; font: 14px ui-monospace, monospace; text-anchor: middle; }
+    .eyebrow { fill: #607d8b; font: 500 12px ui-monospace, monospace; letter-spacing: 2px; }
+    .callout { fill: #37474f; font: 16px system-ui, sans-serif; }
+    .legend { fill: #546e7a; font: 14px system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+<svg viewBox="0 0 1280 720" role="img" aria-labelledby="load-title load-desc">
+  <title id="load-title">CMP100-210 model loading flow</title>
+  <desc id="load-desc">A public technical flow from GGUF shards through host planning and parallel loading into six card-local residents.</desc>
+  <defs>
+    <marker id="load-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#546e7a"/></marker>
+    <marker id="load-arrow-indigo" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#3f51b5"/></marker>
+  </defs>
+  <rect width="1280" height="720" fill="#ffffff"/>
+  <text x="48" y="56" class="eyebrow">PUBLIC TECHNICAL FLOW · MODEL LOAD</text>
+  <text x="48" y="104" fill="#263238" font-family="system-ui, sans-serif" font-size="40" font-weight="700">From shards to six card-local residents</text>
+  <text x="48" y="136" fill="#607d8b" font-family="system-ui, sans-serif" font-size="20">The retained win is parallel loading; inference starts only after every selected card is ready.</text>
+
+  <rect x="720" y="192" width="496" height="288" rx="8" fill="#fafbfc" stroke="#cfd8dc" stroke-width="2"/>
+  <text x="744" y="224" class="eyebrow">CARD-LOCAL VRAM · SIX RESIDENTS</text>
+
+  <line x1="184" y1="344" x2="232" y2="344" stroke="#546e7a" stroke-width="3" marker-end="url(#load-arrow)"/>
+  <line x1="392" y1="344" x2="440" y2="344" stroke="#546e7a" stroke-width="3" marker-end="url(#load-arrow)"/>
+  <line x1="600" y1="344" x2="648" y2="344" stroke="#3f51b5" stroke-width="4" marker-end="url(#load-arrow-indigo)"/>
+  <line x1="808" y1="344" x2="856" y2="344" stroke="#3f51b5" stroke-width="4" marker-end="url(#load-arrow-indigo)"/>
+
+  <rect x="48" y="288" width="136" height="112" rx="8" class="node"/>
+  <text x="116" y="336" class="name">GGUF shards</text>
+  <text x="116" y="364" class="sub">files + metadata</text>
+
+  <rect x="232" y="288" width="160" height="112" rx="8" class="node"/>
+  <text x="312" y="336" class="name">Host reads</text>
+  <text x="312" y="364" class="sub">file + page cache</text>
+
+  <rect x="440" y="288" width="160" height="112" rx="8" class="node"/>
+  <text x="520" y="336" class="name">Tensor plan</text>
+  <text x="520" y="364" class="sub">layers + placement</text>
+
+  <rect x="648" y="288" width="160" height="112" rx="8" class="focal"/>
+  <text x="728" y="336" class="name">Parallel load</text>
+  <text x="728" y="364" class="sub">accepted path</text>
+
+  <rect x="856" y="288" width="312" height="112" rx="8" class="focal"/>
+  <text x="1012" y="336" class="name">Six card-local residents</text>
+  <text x="1012" y="364" class="sub">weights placed · server ready</text>
+
+  <rect x="320" y="480" width="640" height="96" rx="8" class="constraint"/>
+  <text x="352" y="520" class="eyebrow">RETAINED CONSTRAINT</text>
+  <text x="352" y="552" class="callout">Host-to-card transfers use a narrow Gen1 x1 link. No CUDA P2P/NVLink path joins the cards.</text>
+
+  <line x1="48" y1="632" x2="1232" y2="632" stroke="#cfd8dc" stroke-width="2"/>
+  <rect x="48" y="656" width="20" height="12" fill="#e8eaf6" stroke="#3f51b5" stroke-width="2"/>
+  <text x="80" y="668" class="legend">retained, configuration-specific improvement</text>
+  <rect x="432" y="656" width="20" height="12" fill="#f5f7f8" stroke="#90a4ae" stroke-width="2" stroke-dasharray="6 6"/>
+  <text x="464" y="668" class="legend">measured hardware constraint</text>
+</svg>
+</body>
+</html>

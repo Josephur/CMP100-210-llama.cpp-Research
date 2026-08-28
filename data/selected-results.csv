@@ -1,0 +1,5 @@
+finding_id,status,model_scope,hardware_scope,context_tokens,metric,baseline,candidate,unit,delta_percent,integrity,evidence_scope,notes
+forced-dp4a-mmq-128k,accepted,Qwen3.5-122B-A10B UD-Q4_K_XL,six CMP100-210 cards fixed at 1380 MHz,128000,prefill throughput,1.00,2.36,ratio,136.00,byte_exact,configuration_specific,Matched automatic versus forced DP4A/MMQ policy; decode is outside this prefill finding.
+mapped-host-fp16-32k,rejected,Qwen3.5-122B-A10B UD-Q4_K_XL,six CMP100-210 cards fixed at 1380 MHz,32000,prompt throughput,0.00,2.26,percent,2.26,changed_output,configuration_specific,Boundary traffic was reduced but deterministic output changed.
+mapped-host-fp16-100k,rejected,Qwen3.5-122B-A10B UD-Q4_K_XL,six CMP100-210 cards fixed at 1380 MHz,100000,prompt throughput,0.00,1.76,percent,1.76,changed_output,configuration_specific,Boundary traffic was reduced but deterministic output changed.
+grouped-moe-tiling-100k,rejected,Qwen3.5-122B-A10B quantized MoE,six CMP100-210 cards fixed at 1380 MHz,100000,complete wall,0.00,-0.015,percent,-0.015,byte_exact,configuration_specific,Isolated grouped kernel was faster but the complete request was not materially improved.
