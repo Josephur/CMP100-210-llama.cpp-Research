@@ -1,0 +1,455 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CMP100-210 Research <cmp100-research@example.invalid>
+Date: Fri, 28 Aug 2026 12:00:00 -0400
+Subject: [PATCH 3/4] load independent GPU model contexts in parallel
+Base-Commit: 0d0bfcd4fd8828e3e7906b6fc4561725b534511e
+
+Mechanism: parallel loading
+Evidence: docs/findings/accepted-optimizations.md#parallel-loading
+Integrity: exact-output retained
+Scope: opt-in positional file reads, host-first ordering, concurrent GPU context uploads, and synchronized progress/finalization
+Changed-Files: src/llama-mmap.cpp, src/llama-mmap.h, src/llama-model-loader.cpp, src/llama-model-loader.h, src/llama-model.cpp, tests/CMakeLists.txt, tests/test-llama-file-read-at.cpp
+---
+diff --git a/src/llama-mmap.cpp b/src/llama-mmap.cpp
+index ed572da7f..72459113a 100644
+--- a/src/llama-mmap.cpp
++++ b/src/llama-mmap.cpp
+@@ -9,6 +9,7 @@
+ #include <stdexcept>
+ #include <cerrno>
+ #include <algorithm>
++#include <mutex>
+ 
+ #ifdef __has_include
+     #if __has_include(<unistd.h>)
+@@ -143,6 +144,12 @@ struct llama_file::impl {
+         }
+     }
+ 
++    void read_raw_at_unsafe(void * ptr, size_t len, size_t offset) {
++        std::lock_guard<std::mutex> lock(read_at_mutex);
++        seek(offset, SEEK_SET);
++        read_raw(ptr, len);
++    }
++
+     uint32_t read_u32() {
+         uint32_t val;
+         read_raw(&val, sizeof(val));
+@@ -316,6 +323,36 @@ struct llama_file::impl {
+         }
+     }
+ 
++    void read_raw_at_unsafe(void * ptr, size_t len, size_t offset) {
++        if (len == 0) {
++            return;
++        }
++
++        const int read_fd = fd != -1 ? fd : ::fileno(fp);
++        size_t bytes_read = 0;
++        while (bytes_read < len) {
++            const ssize_t ret = ::pread(
++                read_fd,
++                reinterpret_cast<char *>(ptr) + bytes_read,
++                len - bytes_read,
++                (off_t) (offset + bytes_read));
++            if (ret == -1) {
++                if (errno == EINTR) {
++                    continue;
++                }
++                throw std::runtime_error(format("read error: %s", strerror(errno)));
++            }
++            if (ret == 0) {
++                if (offset + bytes_read == size) {
++                    std::memset(reinterpret_cast<char *>(ptr) + bytes_read, 0, len - bytes_read);
++                    return;
++                }
++                throw std::runtime_error("unexpectedly reached end of file");
++            }
++            bytes_read += (size_t) ret;
++        }
++    }
++
+     void read_aligned_chunk(void * dest, size_t size) {
+         size_t offset = tell();
+         off_t aligned_offset = offset & ~(alignment - 1);
+@@ -389,6 +426,7 @@ struct llama_file::impl {
+     }
+ 
+     size_t alignment = 1;
++    std::mutex read_at_mutex;
+ 
+     FILE * fp{};
+     size_t size{};
+@@ -430,6 +468,9 @@ void llama_file::read_raw_unsafe(void * ptr, size_t len) { pimpl->read_raw(ptr,
+ #else
+ void llama_file::read_raw_unsafe(void * ptr, size_t len) { pimpl->read_raw_unsafe(ptr, len); }
+ #endif
++void llama_file::read_raw_at_unsafe(void * ptr, size_t len, size_t offset) {
++    pimpl->read_raw_at_unsafe(ptr, len, offset);
++}
+ 
+ uint32_t llama_file::read_u32() { return pimpl->read_u32(); }
+ 
+diff --git a/src/llama-mmap.h b/src/llama-mmap.h
+index b7d5c61e9..7a9d70767 100644
+--- a/src/llama-mmap.h
++++ b/src/llama-mmap.h
+@@ -27,6 +27,7 @@ struct llama_file {
+ 
+     void read_raw(void * ptr, size_t len);
+     void read_raw_unsafe(void * ptr, size_t len);
++    void read_raw_at_unsafe(void * ptr, size_t len, size_t offset);
+     void read_aligned_chunk(void * dest, size_t size);
+     uint32_t read_u32();
+ 
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 51ba05439..36a898782 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -1415,7 +1415,8 @@ bool llama_model_loader::load_all_data(
+         llama_buf_map & bufs,
+         llama_mlocks * lmlocks,
+         llama_progress_callback progress_callback,
+-        void * progress_callback_user_data) {
++        void * progress_callback_user_data,
++        bool positional_reads) {
+     if (files.empty()) {
+         for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t)) {
+             set_tensor_data(t, set_tensor_data_ud);
+@@ -1532,8 +1533,15 @@ bool llama_model_loader::load_all_data(
+             continue;
+         }
+ 
++        if (load_cancelled.load(std::memory_order_relaxed)) {
++            return false;
++        }
++
+         if (progress_callback) {
+-            if (!progress_callback((float) size_done / size_data, progress_callback_user_data)) {
++            std::lock_guard<std::mutex> lock(load_progress_mutex);
++            if (!progress_callback((float) size_done.load(std::memory_order_relaxed) / size_data,
++                                   progress_callback_user_data)) {
++                load_cancelled.store(true, std::memory_order_relaxed);
+                 return false;
+             }
+         }
+@@ -1572,8 +1580,12 @@ bool llama_model_loader::load_all_data(
+             const auto & file = files.at(weight->idx);
+ 
+             if (ggml_backend_buffer_is_host(cur->buffer)) {
+-                file->seek(weight->offs, SEEK_SET);
+-                file->read_raw(cur->data, n_size);
++                if (positional_reads) {
++                    file->read_raw_at_unsafe(cur->data, n_size, weight->offs);
++                } else {
++                    file->seek(weight->offs, SEEK_SET);
++                    file->read_raw(cur->data, n_size);
++                }
+                 if (check_tensors) {
+                     validation_result.emplace_back(std::async(std::launch::async, [cur, n_size] {
+                         return std::make_pair(cur, ggml_validate_row_data(cur->type, cur->data, n_size));
+@@ -1586,7 +1598,9 @@ bool llama_model_loader::load_all_data(
+                     alignment = file->read_alignment();
+                     size_t aligned_offset = offset & ~(alignment - 1);
+                     size_t offset_from_alignment = offset - aligned_offset;
+-                    file->seek(aligned_offset, SEEK_SET);
++                    if (!positional_reads) {
++                        file->seek(aligned_offset, SEEK_SET);
++                    }
+ 
+                     // Calculate aligned read boundaries
+                     size_t read_start = aligned_offset;
+@@ -1605,7 +1619,12 @@ bool llama_model_loader::load_all_data(
+                         ggml_backend_event_synchronize(events[buffer_idx]);
+ 
+                         // Read aligned chunk from file
+-                        file->read_raw_unsafe(reinterpret_cast<void *>(ptr_dest_aligned), read_size);
++                        if (positional_reads) {
++                            file->read_raw_at_unsafe(reinterpret_cast<void *>(ptr_dest_aligned), read_size,
++                                                     aligned_offset + bytes_read);
++                        } else {
++                            file->read_raw_unsafe(reinterpret_cast<void *>(ptr_dest_aligned), read_size);
++                        }
+ 
+                         // Calculate actual data portion (excluding alignment padding)
+                         uintptr_t ptr_data = ptr_dest_aligned;
+@@ -1635,8 +1654,12 @@ bool llama_model_loader::load_all_data(
+                     }
+                 } else {
+                     read_buf.resize(n_size);
+-                    file->seek(weight->offs, SEEK_SET);
+-                    file->read_raw(read_buf.data(), n_size);
++                    if (positional_reads) {
++                        file->read_raw_at_unsafe(read_buf.data(), n_size, weight->offs);
++                    } else {
++                        file->seek(weight->offs, SEEK_SET);
++                        file->read_raw(read_buf.data(), n_size);
++                    }
+                     ggml_backend_tensor_set(cur, read_buf.data(), 0, n_size);
+                     if (check_tensors && !ggml_validate_row_data(cur->type, read_buf.data(), n_size)) {
+                         throw std::runtime_error(format("tensor '%s' has invalid data", ggml_get_name(cur)));
+@@ -1645,7 +1668,7 @@ bool llama_model_loader::load_all_data(
+             }
+         }
+ 
+-        size_done += n_size;
++        size_done.fetch_add(n_size, std::memory_order_relaxed);
+     }
+ 
+     // free temporary resources used for async uploads
+@@ -1672,22 +1695,28 @@ bool llama_model_loader::load_all_data(
+     }
+ 
+     // check if this is the last call and do final cleanup
+-    if (size_done >= size_data) {
+-        // unmap offloaded tensors and metadata
+-        if (use_mmap) {
+-            for (uint32_t idx = 0; idx < mappings.size(); idx++) {
+-                const auto & mmap_used = mmaps_used.at(idx);
+-                auto & mapping = mappings.at(idx);
+-                mapping->unmap_fragment(0, mmap_used.first);
+-                if (mmap_used.second != 0) {
+-                    mapping->unmap_fragment(mmap_used.second, mapping->size());
++    if (size_done.load(std::memory_order_relaxed) >= size_data) {
++        bool expected = false;
++        if (load_finalized.compare_exchange_strong(expected, true)) {
++            // unmap offloaded tensors and metadata
++            if (use_mmap) {
++                for (uint32_t idx = 0; idx < mappings.size(); idx++) {
++                    const auto & mmap_used = mmaps_used.at(idx);
++                    auto & mapping = mappings.at(idx);
++                    mapping->unmap_fragment(0, mmap_used.first);
++                    if (mmap_used.second != 0) {
++                        mapping->unmap_fragment(mmap_used.second, mapping->size());
++                    }
+                 }
+             }
+-        }
+-        if (progress_callback) {
+-            // Even though the model is done loading, we still honor
+-            // cancellation since we need to free allocations.
+-            return progress_callback(1.0f, progress_callback_user_data);
++            if (progress_callback) {
++                // Even though the model is done loading, we still honor
++                // cancellation since we need to free allocations.
++                std::lock_guard<std::mutex> lock(load_progress_mutex);
++                const bool keep_loading = progress_callback(1.0f, progress_callback_user_data);
++                load_cancelled.store(!keep_loading, std::memory_order_relaxed);
++                return keep_loading;
++            }
+         }
+     }
+ 
+diff --git a/src/llama-model-loader.h b/src/llama-model-loader.h
+index d6b31c231..ac1326cda 100644
+--- a/src/llama-model-loader.h
++++ b/src/llama-model-loader.h
+@@ -9,9 +9,11 @@
+ 
+ #include "ggml-cpp.h"
+ 
++#include <atomic>
+ #include <cstddef>
+ #include <cstring>
+ #include <map>
++#include <mutex>
+ #include <stdexcept>
+ #include <unordered_map>
+ 
+@@ -101,8 +103,11 @@ struct llama_model_loader {
+     std::string arch_name;
+     LLM_KV      llm_kv    = LLM_KV(LLM_ARCH_UNKNOWN);
+ 
+-    size_t size_done = 0;
++    std::atomic<size_t> size_done{0};
+     size_t size_data = 0;
++    std::atomic<bool> load_cancelled{false};
++    std::atomic<bool> load_finalized{false};
++    std::mutex load_progress_mutex;
+     std::vector<std::pair<size_t, size_t>> mmaps_used;
+ 
+     // define a comparator for the buft -> ctx map to ensure that the order is well-defined:
+@@ -203,7 +208,8 @@ struct llama_model_loader {
+             llama_buf_map & bufs,
+             llama_mlocks * lmlocks,
+             llama_progress_callback progress_callback,
+-            void * progress_callback_user_data);
++            void * progress_callback_user_data,
++            bool positional_reads = false);
+ 
+     std::string ftype_name() const;
+ 
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index c81005505..79f923b96 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -28,8 +28,10 @@
+ #include <cfloat>
+ #include <cstdint>
+ #include <cstring>
++#include <cstdlib>
+ #include <cmath>
+ #include <functional>
++#include <future>
+ #include <map>
+ #include <numeric>
+ #include <regex>
+@@ -1677,11 +1679,72 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
+         return true;
+     }
+ 
+-    // load tensor data
+-    for (auto & [ctx, buf_map] : ctx_buf_maps) {
+-        if (!ml.load_all_data(ctx, buf_map, use_mlock ? &pimpl->mlock_mmaps : NULL, params.progress_callback, params.progress_callback_user_data)) {
++    // Load tensor data. This path is opt-in because positional reads and one
++    // upload worker per GPU are beneficial only on suitable storage/topologies.
++    const char * parallel_env = std::getenv("LLAMA_MODEL_LOAD_PARALLEL");
++    const bool parallel_requested = parallel_env != nullptr && std::strcmp(parallel_env, "1") == 0;
++    const bool parallel_eligible = !ml.use_mmap && !ml.use_direct_io && !ml.check_tensors;
++
++    std::vector<size_t> host_loads;
++    std::vector<size_t> gpu_loads;
++    for (size_t i = 0; i < ctx_buf_maps.size(); ++i) {
++        ggml_tensor * first = ggml_get_first_tensor(ctx_buf_maps[i].first);
++        GGML_ASSERT(first != nullptr && first->buffer != nullptr);
++        if (ggml_backend_buffer_is_host(first->buffer)) {
++            host_loads.push_back(i);
++        } else {
++            gpu_loads.push_back(i);
++        }
++    }
++
++    const bool parallel_load = parallel_requested && parallel_eligible && gpu_loads.size() > 1;
++    const auto load_one = [&](size_t i, bool positional_reads) {
++        auto & [ctx, buf_map] = ctx_buf_maps[i];
++        return ml.load_all_data(ctx, buf_map, use_mlock ? &pimpl->mlock_mmaps : NULL,
++                                params.progress_callback, params.progress_callback_user_data,
++                                positional_reads);
++    };
++
++    if (parallel_load) {
++        // Host tensors are loaded first. GPU contexts then use positional reads
++        // so independent backend uploads can overlap without sharing file offsets.
++        for (size_t i : host_loads) {
++            if (!load_one(i, false)) {
++                return false;
++            }
++        }
++
++        std::vector<std::future<bool>> futures;
++        futures.reserve(gpu_loads.size());
++        for (size_t i : gpu_loads) {
++            futures.emplace_back(std::async(std::launch::async, [&, i] {
++                return load_one(i, true);
++            }));
++        }
++
++        std::exception_ptr first_exception;
++        bool loaded = true;
++        for (auto & future : futures) {
++            try {
++                loaded = future.get() && loaded;
++            } catch (...) {
++                if (!first_exception) {
++                    first_exception = std::current_exception();
++                }
++            }
++        }
++        if (first_exception) {
++            std::rethrow_exception(first_exception);
++        }
++        if (!loaded) {
+             return false;
+         }
++    } else {
++        for (size_t i = 0; i < ctx_buf_maps.size(); ++i) {
++            if (!load_one(i, false)) {
++                return false;
++            }
++        }
+     }
+ 
+     if (use_mmap_buffer) {
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 419e1eba4..67b8d6546 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -267,6 +267,8 @@ if (NOT LLAMA_SANITIZE_ADDRESS AND NOT GGML_SCHED_NO_REALLOC)
+   llama_build_and_test(test-opt.cpp)
+ endif()
+ llama_build_and_test(test-backend-ops.cpp)
++llama_build_and_test(test-llama-file-read-at.cpp)
++target_include_directories(test-llama-file-read-at PRIVATE ${PROJECT_SOURCE_DIR}/src)
+ 
+ llama_build_and_test(test-model-load-cancel.cpp LABEL "model")
+ llama_build_and_test(test-autorelease.cpp       LABEL "model")
+diff --git a/tests/test-llama-file-read-at.cpp b/tests/test-llama-file-read-at.cpp
+new file mode 100644
+index 000000000..da7acbc17
+--- /dev/null
++++ b/tests/test-llama-file-read-at.cpp
+@@ -0,0 +1,62 @@
++#include "llama-mmap.h"
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <cstdint>
++#include <filesystem>
++#include <fstream>
++#include <stdexcept>
++#include <thread>
++#include <vector>
++
++int main() {
++    constexpr size_t file_size = 8 * 1024 * 1024;
++    constexpr size_t read_size = 256 * 1024;
++
++    std::vector<uint8_t> expected(file_size);
++    for (size_t i = 0; i < expected.size(); ++i) {
++        expected[i] = (uint8_t) ((i * 131 + i / 97) & 0xff);
++    }
++
++    const auto nonce = std::chrono::high_resolution_clock::now().time_since_epoch().count();
++    const auto path  = std::filesystem::temp_directory_path() / ("llama-read-at-" + std::to_string(nonce) + ".bin");
++    {
++        std::ofstream output(path, std::ios::binary);
++        output.write((const char *) expected.data(), expected.size());
++        if (!output.good()) {
++            throw std::runtime_error("failed to create positional-read fixture");
++        }
++    }
++
++    try {
++        llama_file               file(path.string().c_str(), "rb");
++        std::vector<std::thread> readers;
++        std::atomic<bool> mismatch{false};
++        for (size_t worker = 0; worker < 8; ++worker) {
++            readers.emplace_back([&, worker] {
++                std::vector<uint8_t> actual(read_size);
++                for (size_t iteration = 0; iteration < 64; ++iteration) {
++                    const size_t offset = (worker * 97777 + iteration * 131071) % (file_size - read_size);
++                    file.read_raw_at_unsafe(actual.data(), actual.size(), offset);
++                    if (!std::equal(actual.begin(), actual.end(), expected.begin() + offset)) {
++                        mismatch.store(true, std::memory_order_relaxed);
++                        return;
++                    }
++                }
++            });
++        }
++        for (auto & reader : readers) {
++            reader.join();
++        }
++        if (mismatch.load(std::memory_order_relaxed)) {
++            throw std::runtime_error("concurrent positional read returned incorrect data");
++        }
++    } catch (...) {
++        std::filesystem::remove(path);
++        throw;
++    }
++
++    std::filesystem::remove(path);
++    return 0;
++}
+-- 
+2.51.0

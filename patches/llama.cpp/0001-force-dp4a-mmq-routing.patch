@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CMP100-210 Research <cmp100-research@example.invalid>
 Date: Fri, 28 Aug 2026 12:00:00 -0400
-Subject: [PATCH 1/2] force DP4A MMQ routing for tested quantized prefill
+Subject: [PATCH 1/4] force DP4A MMQ routing for tested quantized prefill
 Base-Commit: 0d0bfcd4fd8828e3e7906b6fc4561725b534511e
 
 Mechanism: forced DP4A/MMQ routing

@@ -23,6 +23,8 @@
     "mkdocs.yml",
     "patches/llama.cpp/0001-force-dp4a-mmq-routing.patch",
     "patches/llama.cpp/0002-route-volta-q4k-q5k-mmq.patch",
+    "patches/llama.cpp/0003-parallel-model-loader.patch",
+    "patches/llama.cpp/0004-lossless-mapped-host-bridge.patch",
     "patches/llama.cpp/audit.json",
     "release-manifest.json",
     "scripts/apply-patches.sh"
