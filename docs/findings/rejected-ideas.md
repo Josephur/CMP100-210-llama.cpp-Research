@@ -31,3 +31,12 @@ work must first prove a larger complete-request owner.
 Several microbatch choices completed and appeared faster while changing the
 retained deterministic response. They remain rejected under the integrity
 policy even where a marker check or token count succeeded.
+
+## Exact D256 attention kernel without request ownership
+
+A three-CTA whole-tile D256 attention candidate kept deterministic output and
+made the isolated production-shaped operation about 24% faster. In the matched
+long-context complete request, prompt throughput moved only +0.527% and wall
+time only -0.492%. It is shelved rather than promoted: a fast sub-operation is
+not a user-visible gain when the surrounding request still owns nearly all of
+the elapsed time.

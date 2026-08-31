@@ -9,8 +9,8 @@ Review the repository-root `PATCHES.md` inventory and
 `patches/llama.cpp/audit.json` before applying the series. The audit retains
 ten complete hunks: eight for forced DP4A/MMQ selection and two for the Volta
 Q4_K/Q5_K MMQ route. It also records two clean semantic reconstructions while
-leaving all 576 original mixed or rejected hunks excluded: the parallel model
-loader and the lossless mapped-host boundary bridge.
+leaving original mixed or rejected hunks excluded: the parallel model loader
+and the lossless mapped-host boundary bridge.
 
 ## Exact-base application gate
 
@@ -59,21 +59,22 @@ cmake -S /src -B /build-sm70 -G Ninja \
   -DGGML_AVX_VNNI=OFF \
   -DGGML_CUDA_COMPRESSION_MODE=none \
   -DLLAMA_BUILD_TESTS=ON \
-  '-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -march=skylake -mtune=skylake' \
-  '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -march=skylake -mtune=skylake'
+  '-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG' \
+  '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG'
 cmake --build /build-sm70 --target \
   llama-server test-arg-parser test-llama-file-read-at -j2
 ```
 
-Here `/src` is the exact pinned and patched checkout. The Skylake CPU flags
-match the documented tested host class; change them only after auditing the
-actual runtime CPU. `70-real` requests native SM70 code, but the CMake cache is
-not sufficient proof: inspect `/build-sm70/bin/libggml-cuda.so` with
+Here `/src` is the exact pinned and patched checkout. Select and audit the
+host-CPU ISA policy appropriate to the machine that will execute the binary;
+this public release deliberately does not prescribe a particular CPU family.
+`70-real` requests native SM70 code, but the CMake cache is not sufficient
+proof: inspect `/build-sm70/bin/libggml-cuda.so` with
 `cuobjdump` and require every embedded CUDA image to be an `.sm_70.cubin` with
 no PTX entry before treating the build as reproduced. Leaving both compile-time
 force options off is required for the patched runtime selector to control MMQ
-routing. `GGML_CUDA_NO_PEER_COPY=ON` is required to compile the no-P2P bridge
-fallback used by the tested CMP topology.
+routing. `GGML_CUDA_NO_PEER_COPY=ON` compiles the no-P2P bridge fallback used
+by the tested CMP topology.
 
 CMP100-210 is not an ordinary V100. The measured limitations summarized in
 [Hardware Limitations](hardware-limitations.md)—including reduced device-local
@@ -113,23 +114,6 @@ quantization, arithmetic precision, model data, prompts, sampling, or the
 exact-output requirement, and they do not establish that another llama.cpp
 revision, CUDA build, GPU, model, or request shape chooses the same kernels or
 performance outcome.
-
-Two additional default-off environment selectors are included:
-
-- `LLAMA_MODEL_LOAD_PARALLEL=1` loads host tensors first, then overlaps
-  independent GPU-context file reads and uploads. It falls back to serial
-  loading for mmap, direct I/O, tensor validation, or fewer than two GPU
-  contexts.
-- `GGML_CUDA_MAPPED_HOST_BRIDGE=1` preserves CUDA allocation ownership in the
-  scheduler and carries eligible no-P2P CUDA boundaries through four mapped
-  pinned host slots into destination-local memory. It is limited to equal-size
-  CUDA tensors no larger than 64 MiB, requires the no-peer-copy build, and is
-  disabled when `GGML_CUDA_P2P` is present.
-
-Neither selector changes tensor precision or model data. The loader patch omits
-the rejected read-ahead pipeline and load-trace scaffolding. The bridge patch
-omits mapped-host FP16, event-scoped bridging, adaptive depth, and superseded
-prefill queue experiments.
 
 ## Output integrity and performance boundary
 
