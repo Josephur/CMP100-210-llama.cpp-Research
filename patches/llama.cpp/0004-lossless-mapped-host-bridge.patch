@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CMP100-210 Research <cmp100-research@example.invalid>
-Date: Fri, 28 Aug 2026 12:00:00 -0400
-Subject: [PATCH 4/4] bridge no-P2P CUDA boundaries through mapped pinned staging
-Base-Commit: 0d0bfcd4fd8828e3e7906b6fc4561725b534511e
+Date: Fri, 5 Sep 2026 12:00:00 -0400
+Subject: [PATCH 4/7] bridge no-P2P CUDA boundaries through mapped pinned staging
+Base-Commit: 25b03bd5b987e4e8b11691c42afc3f317a9d1515
 
 Mechanism: lossless boundary transport and pinned staging
 Evidence: docs/findings/accepted-optimizations.md#lossless-boundary-transport-and-pinned-staging
@@ -11,10 +11,10 @@ Scope: opt-in CUDA ownership routing and a fixed four-slot lossless mapped-host 
 Changed-Files: ggml/src/ggml-backend.cpp, ggml/src/ggml-cuda/common.cuh, ggml/src/ggml-cuda/ggml-cuda.cu
 ---
 diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
-index f6fb91798..7696f5923 100644
+index 78eb10dfe..a3da23661 100644
 --- a/ggml/src/ggml-backend.cpp
 +++ b/ggml/src/ggml-backend.cpp
-@@ -865,6 +865,11 @@ static void ggml_backend_sched_graph_inputs_grow(ggml_backend_sched_t sched) {
+@@ -868,6 +868,11 @@ static void ggml_backend_sched_graph_inputs_grow(ggml_backend_sched_t sched) {
  }
  
  // returns the priority of the backend, lower id is higher priority
@@ -26,7 +26,7 @@ index f6fb91798..7696f5923 100644
  static int ggml_backend_sched_backend_id(ggml_backend_sched_t sched, ggml_backend_t backend) {
      for (int i = 0; i < sched->n_backends; i++) {
          if (sched->backends[i] == backend) {
-@@ -880,6 +885,22 @@ static int ggml_backend_sched_backend_from_buffer(ggml_backend_sched_t sched, co
+@@ -883,6 +888,22 @@ static int ggml_backend_sched_backend_from_buffer(ggml_backend_sched_t sched, co
          return -1;
      }
  
@@ -49,7 +49,7 @@ index f6fb91798..7696f5923 100644
      // find highest prio backend that supports the buffer type and the op
      for (int i = 0; i < sched->n_backends; i++) {
          if (ggml_backend_supports_buft(sched->backends[i], buffer->buft) &&
-@@ -896,6 +917,31 @@ static int ggml_backend_sched_backend_from_buffer(ggml_backend_sched_t sched, co
+@@ -899,6 +920,31 @@ static int ggml_backend_sched_backend_from_buffer(ggml_backend_sched_t sched, co
      return -1;
  }
  
@@ -81,7 +81,7 @@ index f6fb91798..7696f5923 100644
  #if 0
  #define GGML_SCHED_MAX_SPLITS_DEBUG 4096
  static char causes[GGML_DEFAULT_GRAPH_SIZE*16 + GGML_SCHED_MAX_SPLITS_DEBUG*GGML_SCHED_MAX_SPLIT_INPUTS][128]; // debug only
-@@ -1086,6 +1132,11 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
+@@ -1089,6 +1135,11 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
      for (int i = 0; i < graph->n_nodes; i++) {
          struct ggml_tensor * node = graph->nodes[i];
          int * node_backend_id = &tensor_backend_id(node);
@@ -93,7 +93,7 @@ index f6fb91798..7696f5923 100644
          // do not overwrite user assignments
          if (*node_backend_id == -1) {
              *node_backend_id = ggml_backend_sched_backend_id_from_cur(sched, node);
-@@ -1229,6 +1280,15 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
+@@ -1232,6 +1283,15 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
          } else {
              // assigned node: upgrade to higher prio backend if possible
              for (int b = 0; b < *node_backend_id; b++) {
@@ -109,7 +109,7 @@ index f6fb91798..7696f5923 100644
                  if (sched->bufts[b] == sched->bufts[*node_backend_id] && ggml_backend_supports_op(sched->backends[b], node)) {
                      bool supported = true;
                      for (int j = 0; j < GGML_MAX_SRC; j++) {
-@@ -1372,6 +1432,18 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
+@@ -1375,6 +1435,18 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
                  const int src_backend_id = sched->hv_tensor_backend_ids[src_id];
                  GGML_ASSERT(src_backend_id != -1); // all inputs should be assigned by now
  
@@ -128,7 +128,7 @@ index f6fb91798..7696f5923 100644
                  if (src->flags & GGML_TENSOR_FLAG_INPUT && sched->n_copies > 1) {
                      if (tensor_id_copy(src_id, src_backend_id, 0) == NULL) {
                          ggml_backend_t backend = sched->backends[src_backend_id];
-@@ -1396,7 +1468,8 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
+@@ -1399,7 +1471,8 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
                      }
                  }
  
@@ -138,7 +138,7 @@ index f6fb91798..7696f5923 100644
                      // create a copy of the input in the split's backend
                      if (tensor_id_copy(src_id, cur_backend_id, 0) == NULL) {
                          ggml_backend_t backend = sched->backends[cur_backend_id];
-@@ -1617,7 +1690,13 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
+@@ -1681,7 +1754,13 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
                  } else {
                      ggml_backend_synchronize(split_backend);
                  }
@@ -154,7 +154,7 @@ index f6fb91798..7696f5923 100644
                  // wait for the split backend to finish using the input before overwriting it
                  if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
 diff --git a/ggml/src/ggml-cuda/common.cuh b/ggml/src/ggml-cuda/common.cuh
-index d27d8acb1..6bed22b0e 100644
+index 14dd1098c..9bbe63675 100644
 --- a/ggml/src/ggml-cuda/common.cuh
 +++ b/ggml/src/ggml-cuda/common.cuh
 @@ -1412,10 +1412,13 @@ struct ggml_cuda_stream_context {
@@ -170,17 +170,17 @@ index d27d8acb1..6bed22b0e 100644
 +    ggml_cuda_mapped_host_bridge * mapped_host_bridge = nullptr;
  
      cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
-     cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES] = {nullptr};
-@@ -1666,4 +1669,3 @@ static __inline__ void ggml_cuda_kernel_launch(Kernel kernel, const ggml_cuda_ke
+     cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = {nullptr};
+@@ -1673,4 +1676,3 @@ static __inline__ void ggml_cuda_kernel_launch(Kernel kernel, const ggml_cuda_ke
      kernel<<<launch_params.block_nums, launch_params.block_dims, launch_params.shmem, launch_params.stream>>>(std::forward<Args>(args)... );
      CUDA_CHECK(cudaGetLastError());
  }
 -
 diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
-index cb7e9330c..6e03bfc7d 100644
+index bd9754c2f..7d633d2c8 100644
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
-@@ -699,10 +699,14 @@ static std::mutex ggml_cuda_lock;
+@@ -700,10 +700,14 @@ static std::mutex ggml_cuda_lock;
  static std::condition_variable ggml_cuda_lock_cv;
  static std::atomic<int> ggml_cuda_lock_counter;
  
@@ -195,7 +195,7 @@ index cb7e9330c..6e03bfc7d 100644
      if (copy_event != nullptr) {
          CUDA_CHECK(cudaEventDestroy(copy_event));
      }
-@@ -2465,6 +2469,292 @@ static void ggml_backend_cuda_get_tensor_2d_async(ggml_backend_t backend, const
+@@ -2472,6 +2476,292 @@ static void ggml_backend_cuda_get_tensor_2d_async(ggml_backend_t backend, const
          data, stride_data, (const char *) tensor->data + offset, stride_tensor, size, n_copies, cudaMemcpyDeviceToHost, cuda_ctx->stream()));
  }
  
@@ -488,7 +488,7 @@ index cb7e9330c..6e03bfc7d 100644
  static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_backend_t backend_dst, const ggml_tensor * src, ggml_tensor * dst) {
      ggml_backend_buffer_t buf_src = src->view_src ? src->view_src->buffer : src->buffer;
      ggml_backend_buffer_t buf_dst = dst->view_src ? dst->view_src->buffer : dst->buffer;
-@@ -2501,6 +2791,13 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
+@@ -2508,6 +2798,13 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
              CUDA_CHECK(cudaMemcpyAsync(dst->data, src->data, ggml_nbytes(dst), cudaMemcpyDeviceToDevice, cuda_ctx_src->stream()));
          } else {
  #ifdef GGML_CUDA_NO_PEER_COPY
@@ -502,5 +502,3 @@ index cb7e9330c..6e03bfc7d 100644
              return false;
  #else
              CUDA_CHECK(cudaMemcpyPeerAsync(dst->data, dst_physical, src->data, src_physical, ggml_nbytes(dst), cuda_ctx_src->stream()));
--- 
-2.51.0

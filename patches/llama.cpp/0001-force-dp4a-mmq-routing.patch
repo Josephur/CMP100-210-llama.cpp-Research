@@ -1,8 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CMP100-210 Research <cmp100-research@example.invalid>
-Date: Fri, 28 Aug 2026 12:00:00 -0400
-Subject: [PATCH 1/2] force DP4A MMQ routing for tested quantized prefill
-Base-Commit: 0d0bfcd4fd8828e3e7906b6fc4561725b534511e
+Date: Fri, 5 Sep 2026 12:00:00 -0400
+Subject: [PATCH 1/7] force DP4A MMQ routing for tested quantized prefill
+Base-Commit: 25b03bd5b987e4e8b11691c42afc3f317a9d1515
 
 Mechanism: forced DP4A/MMQ routing
 Evidence: docs/findings/accepted-optimizations.md#forced-dp4ammq-for-tested-quantized-prefill
@@ -11,10 +11,10 @@ Scope: runtime selection and its focused argument-parser coverage
 Changed-Files: common/arg.cpp, ggml/src/ggml-cuda/mmq.cu, tests/test-arg-parser.cpp
 ---
 diff --git a/common/arg.cpp b/common/arg.cpp
-index 9fe7d66e2..0a84ce4bd 100644
+index 4469612cd..dada3722b 100644
 --- a/common/arg.cpp
 +++ b/common/arg.cpp
-@@ -28,6 +28,7 @@
+@@ -26,6 +26,7 @@
  #include <cinttypes>
  #include <climits>
  #include <cmath>
@@ -22,7 +22,7 @@ index 9fe7d66e2..0a84ce4bd 100644
  #include <cstdarg>
  #include <filesystem>
  #include <fstream>
-@@ -75,6 +76,16 @@ static std::string read_file(const std::string & fname) {
+@@ -74,6 +75,16 @@ static std::string read_file(const std::string & fname) {
      return content;
  }
  
@@ -39,7 +39,7 @@ index 9fe7d66e2..0a84ce4bd 100644
  static const std::vector<common_arg> & get_common_arg_defs() {
      static const std::vector<common_arg> options = [] {
          common_params params;
-@@ -2749,6 +2760,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
+@@ -2825,6 +2836,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
              }
          }
      ).set_env("LLAMA_ARG_N_GPU_LAYERS"));
@@ -61,7 +61,7 @@ index 9fe7d66e2..0a84ce4bd 100644
          {"-sm", "--split-mode"}, "{none,layer,row,tensor}",
          "how to split the model across multiple GPUs, one of:\n"
 diff --git a/ggml/src/ggml-cuda/mmq.cu b/ggml/src/ggml-cuda/mmq.cu
-index 707437ea3..671ce9236 100644
+index 7fb440148..ed5025b56 100644
 --- a/ggml/src/ggml-cuda/mmq.cu
 +++ b/ggml/src/ggml-cuda/mmq.cu
 @@ -3,8 +3,38 @@
@@ -117,7 +117,7 @@ index 707437ea3..671ce9236 100644
      bool mmq_supported;
  
      switch (type) {
-@@ -321,6 +358,12 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t
+@@ -323,6 +360,12 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t
      return true;
  #endif //GGML_CUDA_FORCE_MMQ
  
@@ -131,10 +131,10 @@ index 707437ea3..671ce9236 100644
          return !fp16_mma_hardware_available(cc) || ne11 < MMQ_DP4A_MAX_BATCH_SIZE;
      }
 diff --git a/tests/test-arg-parser.cpp b/tests/test-arg-parser.cpp
-index ba58f852e..de99dea23 100644
+index e0907631a..54f38242d 100644
 --- a/tests/test-arg-parser.cpp
 +++ b/tests/test-arg-parser.cpp
-@@ -192,6 +192,17 @@ static void test(void) {
+@@ -249,6 +249,17 @@ static void test(void) {
      assert(params.n_predict == 6789);
      assert(params.n_batch == 9090);
  
@@ -152,5 +152,3 @@ index ba58f852e..de99dea23 100644
      // --draft cannot be used outside llama-speculative
      argv = {"binary_name", "--spec-draft-n-max", "123"};
      assert(true == common_params_parse(argv.size(), list_str_to_char(argv).data(), params, LLAMA_EXAMPLE_SPECULATIVE));
--- 
-2.51.0

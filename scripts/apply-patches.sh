@@ -7,7 +7,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 target=$1
-base_commit='0d0bfcd4fd8828e3e7906b6fc4561725b534511e'
+base_commit='25b03bd5b987e4e8b11691c42afc3f317a9d1515'
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 series_dir="$script_dir/../patches/llama.cpp"
 
@@ -21,10 +21,13 @@ test "${#patches[@]}" -gt 0
 
 for patch in "${patches[@]}"; do
     grep -Fqx "Base-Commit: $base_commit" "$patch"
-    git -C "$target" apply --check "$patch"
 done
 
+# The series is ordered and cumulative: later patches build on earlier ones, so
+# each patch cannot be validated against the pristine base in isolation. Applying
+# the whole series in one invocation validates and applies it in order, and leaves
+# the checkout untouched if any patch in the series does not apply.
 for patch in "${patches[@]}"; do
     echo "Applying $(basename -- "$patch")"
-    git -C "$target" apply "$patch"
 done
+git -C "$target" apply "${patches[@]}"

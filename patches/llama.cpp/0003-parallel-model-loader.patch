@@ -1,17 +1,17 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CMP100-210 Research <cmp100-research@example.invalid>
-Date: Fri, 28 Aug 2026 12:00:00 -0400
-Subject: [PATCH 3/4] load independent GPU model contexts in parallel
-Base-Commit: 0d0bfcd4fd8828e3e7906b6fc4561725b534511e
+Date: Fri, 5 Sep 2026 12:00:00 -0400
+Subject: [PATCH 3/7] load independent GPU model contexts in parallel
+Base-Commit: 25b03bd5b987e4e8b11691c42afc3f317a9d1515
 
-Mechanism: parallel loading
-Evidence: docs/findings/accepted-optimizations.md#parallel-loading
+Mechanism: parallel per-backend model load
+Evidence: docs/findings/accepted-optimizations.md#parallel-per-backend-model-load
 Integrity: exact-output retained
-Scope: opt-in positional file reads, host-first ordering, concurrent GPU context uploads, and synchronized progress/finalization
+Scope: default-off parallel weight load across independent GPU backends
 Changed-Files: src/llama-mmap.cpp, src/llama-mmap.h, src/llama-model-loader.cpp, src/llama-model-loader.h, src/llama-model.cpp, tests/CMakeLists.txt, tests/test-llama-file-read-at.cpp
 ---
 diff --git a/src/llama-mmap.cpp b/src/llama-mmap.cpp
-index ed572da7f..72459113a 100644
+index 4d183cbc9..988fe8aee 100644
 --- a/src/llama-mmap.cpp
 +++ b/src/llama-mmap.cpp
 @@ -9,6 +9,7 @@
@@ -91,10 +91,10 @@ index ed572da7f..72459113a 100644
  uint32_t llama_file::read_u32() { return pimpl->read_u32(); }
  
 diff --git a/src/llama-mmap.h b/src/llama-mmap.h
-index b7d5c61e9..7a9d70767 100644
+index cc28c8a73..2ce33ba10 100644
 --- a/src/llama-mmap.h
 +++ b/src/llama-mmap.h
-@@ -27,6 +27,7 @@ struct llama_file {
+@@ -28,6 +28,7 @@ struct llama_file {
  
      void read_raw(void * ptr, size_t len);
      void read_raw_unsafe(void * ptr, size_t len);
@@ -103,10 +103,10 @@ index b7d5c61e9..7a9d70767 100644
      uint32_t read_u32();
  
 diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
-index 51ba05439..36a898782 100644
+index 1b1f852a0..b5430fd45 100644
 --- a/src/llama-model-loader.cpp
 +++ b/src/llama-model-loader.cpp
-@@ -1415,7 +1415,8 @@ bool llama_model_loader::load_all_data(
+@@ -1450,7 +1450,8 @@ bool llama_model_loader::load_all_data(
          llama_buf_map & bufs,
          llama_mlocks * lmlocks,
          llama_progress_callback progress_callback,
@@ -116,7 +116,7 @@ index 51ba05439..36a898782 100644
      if (files.empty()) {
          for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t)) {
              set_tensor_data(t, set_tensor_data_ud);
-@@ -1532,8 +1533,15 @@ bool llama_model_loader::load_all_data(
+@@ -1567,8 +1568,15 @@ bool llama_model_loader::load_all_data(
              continue;
          }
  
@@ -133,7 +133,7 @@ index 51ba05439..36a898782 100644
                  return false;
              }
          }
-@@ -1572,8 +1580,12 @@ bool llama_model_loader::load_all_data(
+@@ -1607,8 +1615,12 @@ bool llama_model_loader::load_all_data(
              const auto & file = files.at(weight->idx);
  
              if (ggml_backend_buffer_is_host(cur->buffer)) {
@@ -148,7 +148,7 @@ index 51ba05439..36a898782 100644
                  if (check_tensors) {
                      validation_result.emplace_back(std::async(std::launch::async, [cur, n_size] {
                          return std::make_pair(cur, ggml_validate_row_data(cur->type, cur->data, n_size));
-@@ -1586,7 +1598,9 @@ bool llama_model_loader::load_all_data(
+@@ -1621,7 +1633,9 @@ bool llama_model_loader::load_all_data(
                      alignment = file->read_alignment();
                      size_t aligned_offset = offset & ~(alignment - 1);
                      size_t offset_from_alignment = offset - aligned_offset;
@@ -159,7 +159,7 @@ index 51ba05439..36a898782 100644
  
                      // Calculate aligned read boundaries
                      size_t read_start = aligned_offset;
-@@ -1605,7 +1619,12 @@ bool llama_model_loader::load_all_data(
+@@ -1640,7 +1654,12 @@ bool llama_model_loader::load_all_data(
                          ggml_backend_event_synchronize(events[buffer_idx]);
  
                          // Read aligned chunk from file
@@ -173,7 +173,7 @@ index 51ba05439..36a898782 100644
  
                          // Calculate actual data portion (excluding alignment padding)
                          uintptr_t ptr_data = ptr_dest_aligned;
-@@ -1635,8 +1654,12 @@ bool llama_model_loader::load_all_data(
+@@ -1670,8 +1689,12 @@ bool llama_model_loader::load_all_data(
                      }
                  } else {
                      read_buf.resize(n_size);
@@ -188,7 +188,7 @@ index 51ba05439..36a898782 100644
                      ggml_backend_tensor_set(cur, read_buf.data(), 0, n_size);
                      if (check_tensors && !ggml_validate_row_data(cur->type, read_buf.data(), n_size)) {
                          throw std::runtime_error(format("tensor '%s' has invalid data", ggml_get_name(cur)));
-@@ -1645,7 +1668,7 @@ bool llama_model_loader::load_all_data(
+@@ -1680,7 +1703,7 @@ bool llama_model_loader::load_all_data(
              }
          }
  
@@ -197,7 +197,7 @@ index 51ba05439..36a898782 100644
      }
  
      // free temporary resources used for async uploads
-@@ -1672,22 +1695,28 @@ bool llama_model_loader::load_all_data(
+@@ -1707,22 +1730,28 @@ bool llama_model_loader::load_all_data(
      }
  
      // check if this is the last call and do final cleanup
@@ -241,7 +241,7 @@ index 51ba05439..36a898782 100644
      }
  
 diff --git a/src/llama-model-loader.h b/src/llama-model-loader.h
-index d6b31c231..ac1326cda 100644
+index 20f744253..27f0fd56c 100644
 --- a/src/llama-model-loader.h
 +++ b/src/llama-model-loader.h
 @@ -9,9 +9,11 @@
@@ -256,7 +256,7 @@ index d6b31c231..ac1326cda 100644
  #include <stdexcept>
  #include <unordered_map>
  
-@@ -101,8 +103,11 @@ struct llama_model_loader {
+@@ -108,8 +110,11 @@ struct llama_model_loader {
      std::string arch_name;
      LLM_KV      llm_kv    = LLM_KV(LLM_ARCH_UNKNOWN);
  
@@ -269,7 +269,7 @@ index d6b31c231..ac1326cda 100644
      std::vector<std::pair<size_t, size_t>> mmaps_used;
  
      // define a comparator for the buft -> ctx map to ensure that the order is well-defined:
-@@ -203,7 +208,8 @@ struct llama_model_loader {
+@@ -214,7 +219,8 @@ struct llama_model_loader {
              llama_buf_map & bufs,
              llama_mlocks * lmlocks,
              llama_progress_callback progress_callback,
@@ -280,10 +280,10 @@ index d6b31c231..ac1326cda 100644
      std::string ftype_name() const;
  
 diff --git a/src/llama-model.cpp b/src/llama-model.cpp
-index c81005505..79f923b96 100644
+index 65a6702ce..c618df317 100644
 --- a/src/llama-model.cpp
 +++ b/src/llama-model.cpp
-@@ -28,8 +28,10 @@
+@@ -30,8 +30,10 @@
  #include <cfloat>
  #include <cstdint>
  #include <cstring>
@@ -294,7 +294,7 @@ index c81005505..79f923b96 100644
  #include <map>
  #include <numeric>
  #include <regex>
-@@ -1677,11 +1679,72 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
+@@ -1800,11 +1802,72 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
          return true;
      }
  
@@ -371,10 +371,10 @@ index c81005505..79f923b96 100644
  
      if (use_mmap_buffer) {
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 419e1eba4..67b8d6546 100644
+index fe3d14ffc..11d8db16b 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -267,6 +267,8 @@ if (NOT LLAMA_SANITIZE_ADDRESS AND NOT GGML_SCHED_NO_REALLOC)
+@@ -298,6 +298,8 @@ if (NOT LLAMA_SANITIZE_ADDRESS AND NOT GGML_SCHED_NO_REALLOC)
    llama_build_and_test(test-opt.cpp)
  endif()
  llama_build_and_test(test-backend-ops.cpp)
@@ -451,5 +451,3 @@ index 000000000..da7acbc17
 +    std::filesystem::remove(path);
 +    return 0;
 +}
--- 
-2.51.0

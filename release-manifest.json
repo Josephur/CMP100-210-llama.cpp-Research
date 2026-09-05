@@ -25,6 +25,9 @@
     "patches/llama.cpp/0002-route-volta-q4k-q5k-mmq.patch",
     "patches/llama.cpp/0003-parallel-model-loader.patch",
     "patches/llama.cpp/0004-lossless-mapped-host-bridge.patch",
+    "patches/llama.cpp/0005-research-selector-registry.patch",
+    "patches/llama.cpp/0006-prompt-graph-capture-seed.patch",
+    "patches/llama.cpp/0007-device-side-mask-expansion.patch",
     "patches/llama.cpp/audit.json",
     "release-manifest.json",
     "scripts/apply-patches.sh"
